@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+config.yaml
+ohlcv_cache.db
+portfolio.db
+backtest_results.json
