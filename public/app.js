@@ -45,6 +45,7 @@ async function startBot() {
     document.getElementById('btnStop').style.display = 'inline-block';
     document.getElementById('status-indicator').textContent = 'RODANDO';
     document.getElementById('status-indicator').className = 'running';
+    fetchBalance();
   } else {
     addLog(`Erro: ${json.error}`);
   }
@@ -59,6 +60,14 @@ async function stopBot() {
     document.getElementById('status-indicator').textContent = 'PARADO';
     document.getElementById('status-indicator').className = 'stopped';
   }
+}
+
+async function fetchBalance() {
+  try {
+    const res = await fetch('/api/balance');
+    const json = await res.json();
+    if (json.balance != null) updateBalanceUI(json.balance);
+  } catch (_) {}
 }
 
 function addLog(msg) {

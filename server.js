@@ -21,7 +21,9 @@ async function broadcastBalance(apiKey, secretKey, passphrase) {
   try {
     const bal = await okx.getBalance(apiKey, secretKey, passphrase);
     broadcast({ type: 'balance', balance: bal });
-  } catch (_) {}
+  } catch (e) {
+    broadcast({ type: 'log', msg: `Erro ao consultar saldo: ${e.message}` });
+  }
 }
 
 async function processStrategy(apiKey, secretKey, passphrase, strat, state, amount) {
@@ -122,6 +124,16 @@ app.post('/api/stop', (req, res) => {
   if (bot) bot.running = false;
   broadcast({ type: 'log', msg: 'Bot parado' });
   res.json({ success: true });
+});
+
+app.get('/api/balance', async (req, res) => {
+  if (!bot) return res.json({ balance: null });
+  try {
+    const bal = await okx.getBalance(bot.apiKey, bot.secretKey, bot.passphrase);
+    res.json({ balance: bal });
+  } catch (e) {
+    res.json({ balance: null, error: e.message });
+  }
 });
 
 app.get('/api/status', (req, res) => {
