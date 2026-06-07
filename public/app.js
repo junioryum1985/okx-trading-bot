@@ -97,17 +97,32 @@ function updatePriceChart() {
   const ctx = document.getElementById('priceChart').getContext('2d');
   if (!priceChart) {
     priceChart = new Chart(ctx, {
-      type: 'candlestick',
-      data: { datasets: [{ label: 'BTC/USDT', data: [], borderColor: '#f7931a', backgroundColor: c => c.raw.c >= c.raw.o ? '#26a69a' : '#ef5350' }] },
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'BTC/USDT',
+          data: [],
+          borderColor: '#f7931a',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: true,
+          backgroundColor: 'rgba(247,147,26,0.1)'
+        }]
+      },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `O:$${ctx.raw.o.toFixed(1)} H:$${ctx.raw.h.toFixed(1)} L:$${ctx.raw.l.toFixed(1)} C:$${ctx.raw.c.toFixed(1)}` } } },
-        scales: { x: { type: 'time', time: { unit: 'day' }, ticks: { color: '#8b949e', maxTicksLimit: 10 } }, y: { ticks: { color: '#8b949e' } } }
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `$${ctx.parsed.y.toFixed(1)}` } } },
+        scales: {
+          x: { type: 'time', time: { unit: 'day' }, ticks: { color: '#8b949e', maxTicksLimit: 10 } },
+          y: { ticks: { color: '#8b949e', callback: v => '$' + v.toLocaleString() } }
+        }
       }
     });
   }
   const slice = dailyCandles.slice(-90);
-  priceChart.data.datasets[0].data = slice.map(c => ({ x: c.ts, o: c.o, h: c.h, l: c.l, c: c.c }));
+  priceChart.data.labels = slice.map(c => new Date(c.ts));
+  priceChart.data.datasets[0].data = slice.map(c => c.c);
   priceChart.update('none');
 }
 
