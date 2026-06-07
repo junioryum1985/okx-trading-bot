@@ -6,3 +6,4 @@ portfolio.db
 backtest_results.json
 saved_config.json
 keys.txt
+output.log

@@ -35,6 +35,13 @@ function broadcast(data) {
   sseClients.forEach(res => res.write(`data: ${JSON.stringify(data)}\n\n`));
 }
 
+const origLog = console.log;
+console.log = function (...args) {
+  origLog.apply(console, args);
+  const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+  broadcast({ type: 'log', msg: `[SERVER] ${msg}` });
+};
+
 async function broadcastBalance(apiKey, secretKey, passphrase) {
   try {
     const bal = await okx.getBalance(apiKey, secretKey, passphrase);
