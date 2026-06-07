@@ -17,6 +17,13 @@ function broadcast(data) {
   sseClients.forEach(res => res.write(`data: ${JSON.stringify(data)}\n\n`));
 }
 
+async function broadcastBalance(apiKey, secretKey, passphrase) {
+  try {
+    const bal = await okx.getBalance(apiKey, secretKey, passphrase);
+    broadcast({ type: 'balance', balance: bal });
+  } catch (_) {}
+}
+
 async function processStrategy(apiKey, secretKey, passphrase, strat, state, amount) {
   const candles = await okx.getCandles(INSTRUMENT, strat.timeframe, 100);
   const price = candles[candles.length - 1].c;
@@ -71,6 +78,8 @@ async function botLoop() {
   const { apiKey, secretKey, passphrase, states, amount } = bot;
   const perStrategy = amount / STRATEGIES.length;
 
+  await broadcastBalance(apiKey, secretKey, passphrase);
+
   await Promise.all(STRATEGIES.map(s =>
     processStrategy(apiKey, secretKey, passphrase, s, states[s.id], perStrategy).catch(e =>
       broadcast({ type: 'log', msg: `[${s.name}] Erro: ${e.message}` })
@@ -104,6 +113,7 @@ app.post('/api/start', async (req, res) => {
   const names = STRATEGIES.map(s => `${s.name} (${s.timeframe})`).join(', ');
   broadcast({ type: 'log', msg: `Bot iniciado - ${STRATEGIES.length} estratégias: ${names}` });
   broadcast({ type: 'log', msg: `Valor total: $${amount} ($${(amount / STRATEGIES.length).toFixed(2)} por estratégia)` });
+  await broadcastBalance(apiKey, secretKey, passphrase);
   setTimeout(botLoop, 1000);
   res.json({ success: true });
 });

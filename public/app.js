@@ -1,40 +1,38 @@
 const evtSource = new EventSource('/api/sse');
 const trades = [];
-let equityData = [];
 let priceData = [];
-
-let priceChart = null, equityChart = null;
+let priceChart = null, tradeChart = null;
 
 const formatUSD = v => `$${parseFloat(v || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 document.addEventListener('DOMContentLoaded', async () => {
   const res = await fetch('/api/config');
   const cfg = await res.json();
-  const sel = document.getElementById('strategy');
+  const list = document.getElementById('stratList');
   cfg.strategies.forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s.id;
-    opt.textContent = `${s.name} | ${s.timeframe} | ${s.direction} | ${s.leverage}x | TP ${s.tp_pct}% SL ${s.sl_pct}%`;
-    sel.appendChild(opt);
+    const div = document.createElement('div');
+    div.className = 'strat-item';
+    div.id = `strat-${s.id}`;
+    div.innerHTML = `
+      <div class="strat-header">
+        <span class="strat-name">${s.name}</span>
+        <span class="strat-badge ${s.direction}">${s.direction}</span>
+        <span class="strat-status" id="status-${s.id}">⏳ aguardando</span>
+      </div>
+      <div class="strat-details">${s.timeframe} | ${s.leverage}x | TP ${s.tp_pct}% | SL ${s.sl_pct}%</div>
+      <div class="strat-pos">
+        <span class="label">Entry:</span> <span id="entry-${s.id}">-</span>
+        <span class="label">PNL:</span> <span id="pnl-${s.id}">-</span>
+      </div>`;
+    list.appendChild(div);
   });
-  sel.onchange = updateStrategyInfo;
-  updateStrategyInfo();
 });
-
-function updateStrategyInfo() {
-  const sel = document.getElementById('strategy');
-  const text = sel.selectedOptions[0].text;
-  const parts = text.split(' | ');
-  document.getElementById('leverageDisplay').value = parts[3] || '-';
-  document.getElementById('tpslDisplay').value = `TP ${parts[4]} | ${parts[5]}`;
-}
 
 async function startBot() {
   const body = {
     apiKey: document.getElementById('apiKey').value.trim(),
     secretKey: document.getElementById('secretKey').value.trim(),
     passphrase: document.getElementById('passphrase').value.trim(),
-    strategyId: document.getElementById('strategy').value,
     amount: parseFloat(document.getElementById('amount').value)
   };
   if (!body.apiKey || !body.secretKey || !body.passphrase || !body.amount)
@@ -66,12 +64,22 @@ async function stopBot() {
 function addLog(msg) {
   const container = document.getElementById('logContainer');
   const d = new Date();
-  const time = d.toLocaleTimeString();
   const el = document.createElement('div');
   el.className = 'log-entry';
-  el.innerHTML = `<span class="log-time">[${time}]</span> ${msg}`;
+  el.innerHTML = `<span class="log-time">[${d.toLocaleTimeString()}]</span> ${msg}`;
   container.appendChild(el);
   container.scrollTop = container.scrollHeight;
+}
+
+function updateBalanceUI(bal) {
+  let el = document.getElementById('balanceDisplay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'balanceDisplay';
+    el.className = 'balance-display';
+    document.querySelector('.config-card').insertBefore(el, document.getElementById('btnStart'));
+  }
+  el.innerHTML = `<strong>Saldo Total:</strong> ${formatUSD(bal)}`;
 }
 
 evtSource.onmessage = (e) => {
@@ -81,53 +89,36 @@ evtSource.onmessage = (e) => {
       case 'log':
         addLog(data.msg);
         break;
+      case 'balance':
+        updateBalanceUI(data.balance);
+        break;
       case 'signal':
-        document.getElementById('lastSignal').textContent = data.signal ? 'COMPRAR' : 'AGUARDANDO';
-        document.getElementById('lastSignal').className = data.signal ? 'value signal-on' : 'value signal-off';
+        document.getElementById(`status-${data.strategy}`).textContent = data.signal ? '🔵 SINAL' : '⏳ aguardando';
         break;
       case 'position':
-        document.getElementById('posSide').textContent = data.side?.toUpperCase() || '-';
-        document.getElementById('posEntry').textContent = data.entryPx ? formatUSD(data.entryPx) : '-';
-        document.getElementById('posPrice').textContent = formatUSD(data.price);
-        document.getElementById('posPnl').textContent = data.pnl ? formatUSD(data.pnl) : '-';
-        document.getElementById('posPnlPct').textContent = data.pnlPct ? `${data.pnlPct.toFixed(2)}%` : '-';
+        document.getElementById(`status-${data.strategy}`).textContent = '📌 EM POSIÇÃO';
+        document.getElementById(`entry-${data.strategy}`).textContent = formatUSD(data.entryPx);
+        const pnlEl = document.getElementById(`pnl-${data.strategy}`);
+        pnlEl.textContent = `${data.pnlPct ? data.pnlPct.toFixed(2) : '0.00'}%`;
+        pnlEl.className = data.pnlPct >= 0 ? 'value positive' : 'value negative';
         priceData.push({ t: data.ts, p: data.price });
         updatePriceChart();
         break;
       case 'trade':
         trades.push(data);
-        updateEquityChart();
-        addLog(`Trade ${data.side.toUpperCase()} | Entry: ${formatUSD(data.entryPx)} | Size: ${data.sz} | TP: ${formatUSD(data.tpPx)} | SL: ${formatUSD(data.slPx)}`);
+        updateTradeChart();
+        addLog(`[${data.strategy}] Trade ${data.side.toUpperCase()} | Entry: ${formatUSD(data.entryPx)}`);
         break;
     }
-  } catch (e) { /* ignore parse errors */ }
+  } catch (e) { /* ignore */ }
 };
 
 function updatePriceChart() {
   if (!priceChart) {
-    const ctx = document.getElementById('priceChart').getContext('2d');
-    priceChart = new Chart(ctx, {
+    priceChart = new Chart(document.getElementById('priceChart').getContext('2d'), {
       type: 'line',
-      data: {
-        labels: [],
-        datasets: [{
-          label: 'Preço BTC',
-          data: [],
-          borderColor: '#f7931a',
-          borderWidth: 1.5,
-          pointRadius: 0,
-          fill: false
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { display: true, ticks: { maxTicksLimit: 10 } },
-          y: { display: true }
-        }
-      }
+      data: { labels: [], datasets: [{ label: 'BTC', data: [], borderColor: '#f7931a', borderWidth: 1.5, pointRadius: 0, fill: false }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: 10 } } } }
     });
   }
   const slice = priceData.slice(-200);
@@ -136,49 +127,23 @@ function updatePriceChart() {
   priceChart.update('none');
 }
 
-function updateEquityChart() {
-  if (!equityChart) {
-    const ctx = document.getElementById('equityChart').getContext('2d');
-    equityChart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: [],
-        datasets: [
-          { label: 'Equity', data: [], borderColor: '#00c853', borderWidth: 2, pointRadius: 3, fill: false },
-          { label: 'Entry', data: [], borderColor: '#2979ff', borderWidth: 1, pointRadius: 5, pointStyle: 'triangle', fill: false },
-          { label: 'TP', data: [], borderColor: '#00e676', borderWidth: 1, pointRadius: 5, pointStyle: 'triangle', fill: false },
-          { label: 'SL', data: [], borderColor: '#ff1744', borderWidth: 1, pointRadius: 5, pointStyle: 'triangle-down', fill: false }
-        ]
-      },
+function updateTradeChart() {
+  const colors = { 'MACD 12/26/9 Long': '#2979ff', 'EMA 9/21 + MACD Long': '#00c853', 'EMA 9/21 + MACD Short': '#ff1744' };
+  if (!tradeChart) {
+    tradeChart = new Chart(document.getElementById('tradeChart').getContext('2d'), {
+      type: 'scatter',
+      data: { datasets: Object.keys(colors).map(name => ({ label: name, data: [], backgroundColor: colors[name], pointRadius: 6 })) },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: 'top', labels: { color: '#aaa' } } },
-        scales: {
-          x: { display: true, ticks: { maxTicksLimit: 10 } },
-          y: { display: true }
-        }
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'top', labels: { color: '#aaa' } }, tooltip: { callbacks: { label: ctx => `$${ctx.raw.y.toFixed(2)}` } } },
+        scales: { x: { type: 'time', time: { unit: 'day' }, ticks: { color: '#8b949e' } }, y: { ticks: { color: '#8b949e' } } }
       }
     });
   }
-  let equity = 1000;
-  equityData = [{ t: trades.length ? trades[0].ts : Date.now(), eq: equity }];
-  const labels = [], eqVals = [], entryVals = [], tpVals = [], slVals = [];
-  trades.forEach((t, i) => {
-    const pnl = (t.side === 'long' ? 1 : -1) * 100; // simulated PnL
-    equity += pnl;
-    const label = new Date(t.ts).toLocaleDateString();
-    labels.push(label);
-    eqVals.push(equity);
-    entryVals.push(t.entryPx / 100);
-    tpVals.push(t.tpPx / 100);
-    slVals.push(t.slPx / 100);
-    equityData.push({ t: t.ts, eq: equity });
+  trades.forEach(t => {
+    const dsIdx = Object.keys(colors).indexOf(t.strategy);
+    if (dsIdx >= 0 && !tradeChart.data.datasets[dsIdx].data.some(d => d.x === t.ts))
+      tradeChart.data.datasets[dsIdx].data.push({ x: t.ts, y: t.entryPx });
   });
-  equityChart.data.labels = labels;
-  equityChart.data.datasets[0].data = eqVals;
-  equityChart.data.datasets[1].data = entryVals;
-  equityChart.data.datasets[2].data = tpVals;
-  equityChart.data.datasets[3].data = slVals;
-  equityChart.update('none');
+  tradeChart.update('none');
 }
