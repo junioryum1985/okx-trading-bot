@@ -265,9 +265,15 @@ app.get('/api/sse', (req, res) => {
   });
 });
 
-const saved = loadSavedConfig();
-if (saved && saved.apiKey) {
-  console.log('Config salva encontrada — bot pronto para iniciar via dashboard');
-}
-
-app.listen(PORT, () => console.log(`Server rodando na porta ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server rodando na porta ${PORT}`);
+  const saved = loadSavedConfig();
+  if (saved && saved.apiKey) {
+    console.log('Config salva encontrada — iniciando bot automaticamente...');
+    const states = {};
+    STRATEGIES.forEach(s => { states[s.id] = { hasPosition: false, entryPx: 0, pnl: 0, pnlPct: 0, price: 0 }; });
+    bot = { apiKey: saved.apiKey, secretKey: saved.secretKey, passphrase: saved.passphrase, amount: saved.amount, running: true, states };
+    broadcast({ type: 'log', msg: `Bot iniciado automaticamente - ${STRATEGIES.length} estratégias` });
+    setTimeout(botLoop, 1000);
+  }
+});

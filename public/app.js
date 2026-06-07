@@ -6,10 +6,11 @@ const MAX_PRICE_POINTS = 200;
 const formatUSD = v => `$${parseFloat(v || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const [cfgRes, candlesRes, savedRes] = await Promise.all([
+  const [cfgRes, candlesRes, savedRes, statusRes] = await Promise.all([
     fetch('/api/config'),
     fetch('/api/candles/recent'),
-    fetch('/api/saved-config')
+    fetch('/api/saved-config'),
+    fetch('/api/status')
   ]);
   const cfg = await cfgRes.json();
   const candlesJson = await candlesRes.json();
@@ -22,6 +23,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('secretKey').value = savedCfg.secretKey || '';
     document.getElementById('passphrase').value = savedCfg.passphrase || '';
     document.getElementById('amount').value = savedCfg.amount || '';
+  }
+  const status = await statusRes.json();
+  if (status.running) {
+    document.getElementById('btnStart').style.display = 'none';
+    document.getElementById('btnStop').style.display = 'inline-block';
+    document.getElementById('status-indicator').textContent = 'RODANDO';
+    document.getElementById('status-indicator').className = 'running';
+    fetchBalance();
   }
   const list = document.getElementById('stratList');
   cfg.strategies.forEach(s => {
