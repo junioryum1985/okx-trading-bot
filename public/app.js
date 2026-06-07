@@ -6,14 +6,22 @@ const MAX_PRICE_POINTS = 200;
 const formatUSD = v => `$${parseFloat(v || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const [cfgRes, candlesRes] = await Promise.all([
+  const [cfgRes, candlesRes, savedRes] = await Promise.all([
     fetch('/api/config'),
-    fetch('/api/candles/recent')
+    fetch('/api/candles/recent'),
+    fetch('/api/saved-config')
   ]);
   const cfg = await cfgRes.json();
   const candlesJson = await candlesRes.json();
   if (candlesJson.candles) {
     candlesJson.candles.forEach(c => priceData.push({ t: c.ts, p: c.c }));
+  }
+  const savedCfg = await savedRes.json();
+  if (savedCfg.hasConfig) {
+    document.getElementById('apiKey').value = savedCfg.apiKey || '';
+    document.getElementById('secretKey').value = savedCfg.secretKey || '';
+    document.getElementById('passphrase').value = savedCfg.passphrase || '';
+    document.getElementById('amount').value = savedCfg.amount || '';
   }
   const list = document.getElementById('stratList');
   cfg.strategies.forEach(s => {
@@ -57,6 +65,21 @@ async function startBot() {
   } else {
     addLog(`Erro: ${json.error}`);
   }
+}
+
+async function saveConfig() {
+  const body = {
+    apiKey: document.getElementById('apiKey').value.trim(),
+    secretKey: document.getElementById('secretKey').value.trim(),
+    passphrase: document.getElementById('passphrase').value.trim(),
+    amount: parseFloat(document.getElementById('amount').value)
+  };
+  if (!body.apiKey || !body.secretKey || !body.passphrase || !body.amount)
+    return addLog('Preencha todos os campos para salvar');
+  await fetch('/api/save-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  document.getElementById('saveMsg').textContent = '✓ Salvo';
+  setTimeout(() => document.getElementById('saveMsg').textContent = '', 3000);
+  addLog('Configuração salva');
 }
 
 async function stopBot() {

@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const STRATEGIES = require('./strategies');
 const okx = require('./okx');
 okx.setDemo(true); // true = demo (simulated trading), false = live
@@ -10,9 +11,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 3000;
 const INSTRUMENT = 'BTC-USDT-SWAP';
+const CONFIG_FILE = path.join(__dirname, 'saved_config.json');
 
 let bot = null;
 let sseClients = [];
+
+function loadSavedConfig() {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+    }
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+function saveConfig(data) {
+  try {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2));
+  } catch (e) { /* ignore */ }
+}
 
 function broadcast(data) {
   sseClients.forEach(res => res.write(`data: ${JSON.stringify(data)}\n\n`));
@@ -92,6 +109,21 @@ async function botLoop() {
   setTimeout(botLoop, 60000);
 }
 
+app.get('/api/saved-config', (req, res) => {
+  const saved = loadSavedConfig();
+  if (saved && saved.apiKey) {
+    res.json({ hasConfig: true, apiKey: saved.apiKey, secretKey: saved.secretKey, passphrase: saved.passphrase, amount: saved.amount });
+  } else {
+    res.json({ hasConfig: false });
+  }
+});
+
+app.post('/api/save-config', (req, res) => {
+  const { apiKey, secretKey, passphrase, amount } = req.body;
+  saveConfig({ apiKey, secretKey, passphrase, amount: parseFloat(amount) });
+  res.json({ success: true });
+});
+
 app.get('/api/config', (req, res) => {
   res.json({ instrument: INSTRUMENT, strategies: STRATEGIES.map(s => ({
     id: s.id, name: s.name, timeframe: s.timeframe,
@@ -108,6 +140,8 @@ app.post('/api/start', async (req, res) => {
   if (bot && bot.running) {
     return res.json({ success: false, error: 'Bot já está rodando' });
   }
+
+  saveConfig({ apiKey, secretKey, passphrase, amount: parseFloat(amount) });
 
   const states = {};
   STRATEGIES.forEach(s => { states[s.id] = { hasPosition: false, entryPx: 0, pnl: 0, pnlPct: 0, price: 0 }; });
@@ -223,5 +257,10 @@ app.get('/api/sse', (req, res) => {
     sseClients = sseClients.filter(c => c !== res);
   });
 });
+
+const saved = loadSavedConfig();
+if (saved && saved.apiKey) {
+  console.log('Config salva encontrada — bot pronto para iniciar via dashboard');
+}
 
 app.listen(PORT, () => console.log(`Server rodando na porta ${PORT}`));

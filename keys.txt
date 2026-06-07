@@ -1,5 +1,0 @@
-OKX API KEYS (ANTIGAS - Comprometidas, crie novas)
-==================================================
-API Key:    a0313631-709c-4672-af81-1466bb091a8c
-Secret Key: E8BADB45D60EC8A308DD39B574391EEC
-Passphrase: @La394523
