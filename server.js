@@ -17,67 +17,66 @@ function broadcast(data) {
   sseClients.forEach(res => res.write(`data: ${JSON.stringify(data)}\n\n`));
 }
 
-async function botLoop() {
-  if (!bot || !bot.running) return;
-  const { apiKey, secretKey, passphrase, strategy, amount } = bot;
+async function processStrategy(apiKey, secretKey, passphrase, strat, state, amount) {
+  const candles = await okx.getCandles(INSTRUMENT, strat.timeframe, 100);
+  const price = candles[candles.length - 1].c;
+  const allPositions = await okx.getPositions(apiKey, secretKey, passphrase, INSTRUMENT);
+  const openPos = allPositions.find(p =>
+    parseFloat(p.pos) !== 0 && p.posSide === strat.direction.toUpperCase()
+  );
 
-  try {
-    const candles = await okx.getCandles(INSTRUMENT, strategy.timeframe, 100);
-    const price = candles[candles.length - 1].c;
+  state.price = price;
 
-    const positions = await okx.getPositions(apiKey, secretKey, passphrase, INSTRUMENT);
-    const openPos = positions.find(p => parseFloat(p.pos) !== 0);
-
-    if (openPos && openPos.posSide === strategy.direction.toUpperCase()) {
-      const entryPx = parseFloat(openPos.avgPx);
-      const pnl = parseFloat(openPos.upl);
-      const pnlPct = ((price - entryPx) / entryPx) * strategy.leverage * 100 * (strategy.direction === 'long' ? 1 : -1);
-      broadcast({ type: 'position', side: strategy.direction, entryPx, pnl, pnlPct, price, ts: Date.now() });
-      bot.lastPrice = price;
-      setTimeout(botLoop, 60000);
-      return;
-    }
-
-    if (openPos && openPos.posSide !== strategy.direction.toUpperCase()) {
-      await okx.closePosition(apiKey, secretKey, passphrase, INSTRUMENT, openPos.posSide.toLowerCase());
-      broadcast({ type: 'log', msg: `Posição ${openPos.posSide} fechada para inverter` });
-      await new Promise(r => setTimeout(r, 2000));
-    }
-
-    if (!openPos || parseFloat(openPos.pos) === 0) {
-      const signal = strategy.check(candles);
-      broadcast({ type: 'signal', signal, price, ts: Date.now() });
-
-      if (signal) {
-        const minSz = await okx.getMinSize(INSTRUMENT);
-        const sz = Math.max(minSz, parseFloat((amount / price).toFixed(3)));
-        const side = strategy.direction === 'long' ? 'buy' : 'sell';
-        const posSide = strategy.direction;
-
-        broadcast({ type: 'log', msg: `Sinal ${strategy.direction.toUpperCase()} detectado! Entry: $${price}, Size: ${sz}` });
-
-        const order = await okx.placeOrder(apiKey, secretKey, passphrase, INSTRUMENT, side, posSide, sz);
-        if (order.code === '0') {
-          broadcast({ type: 'log', msg: `Ordem executada: ${order.data[0].ordId}` });
-          await new Promise(r => setTimeout(r, 1000));
-          const tpSl = await okx.setTPSL(apiKey, secretKey, passphrase, INSTRUMENT, strategy.tp_pct, strategy.sl_pct, strategy.direction, price);
-          broadcast({ type: 'log', msg: `TP ${strategy.tp_pct}% / SL ${strategy.sl_pct}% configurados` });
-          broadcast({
-            type: 'trade', side: strategy.direction, entryPx: price, sz,
-            tpPx: strategy.direction === 'long' ? price * (1 + strategy.tp_pct / 100) : price * (1 - strategy.tp_pct / 100),
-            slPx: strategy.direction === 'long' ? price * (1 - strategy.sl_pct / 100) : price * (1 + strategy.sl_pct / 100),
-            ts: Date.now()
-          });
-        } else {
-          broadcast({ type: 'log', msg: `Erro ordem: ${order.msg || order.code}` });
-        }
-      }
-    }
-  } catch (e) {
-    broadcast({ type: 'log', msg: `Erro: ${e.message}` });
+  if (openPos) {
+    state.hasPosition = true;
+    state.entryPx = parseFloat(openPos.avgPx);
+    state.pnl = parseFloat(openPos.upl);
+    state.pnlPct = ((price - state.entryPx) / state.entryPx) * strat.leverage * 100 * (strat.direction === 'long' ? 1 : -1);
+    broadcast({ type: 'position', strategy: strat.id, side: strat.direction, entryPx: state.entryPx, pnl: state.pnl, pnlPct: state.pnlPct, price, ts: Date.now() });
+    return;
   }
 
-  bot.lastPrice = bot.lastPrice || 0;
+  state.hasPosition = false;
+  const signal = strat.check(candles);
+  broadcast({ type: 'signal', strategy: strat.id, signal, price, ts: Date.now() });
+
+  if (signal) {
+    const minSz = await okx.getMinSize(INSTRUMENT);
+    const sz = Math.max(minSz, parseFloat((amount / price).toFixed(3)));
+    const side = strat.direction === 'long' ? 'buy' : 'sell';
+    const posSide = strat.direction;
+
+    broadcast({ type: 'log', msg: `[${strat.name}] Sinal ${strat.direction.toUpperCase()}! Entry: $${price}, Size: ${sz}` });
+
+    const order = await okx.placeOrder(apiKey, secretKey, passphrase, INSTRUMENT, side, posSide, sz);
+    if (order.code === '0') {
+      broadcast({ type: 'log', msg: `[${strat.name}] Ordem OK: ${order.data[0].ordId}` });
+      await new Promise(r => setTimeout(r, 1000));
+      await okx.setTPSL(apiKey, secretKey, passphrase, INSTRUMENT, strat.tp_pct, strat.sl_pct, strat.direction, price);
+      broadcast({ type: 'log', msg: `[${strat.name}] TP ${strat.tp_pct}% / SL ${strat.sl_pct}% configurado` });
+      broadcast({
+        type: 'trade', strategy: strat.id, side: strat.direction, entryPx: price, sz,
+        tpPx: strat.direction === 'long' ? price * (1 + strat.tp_pct / 100) : price * (1 - strat.tp_pct / 100),
+        slPx: strat.direction === 'long' ? price * (1 - strat.sl_pct / 100) : price * (1 + strat.sl_pct / 100),
+        ts: Date.now()
+      });
+    } else {
+      broadcast({ type: 'log', msg: `[${strat.name}] Erro ordem: ${order.msg || order.code}` });
+    }
+  }
+}
+
+async function botLoop() {
+  if (!bot || !bot.running) return;
+  const { apiKey, secretKey, passphrase, states, amount } = bot;
+  const perStrategy = amount / STRATEGIES.length;
+
+  await Promise.all(STRATEGIES.map(s =>
+    processStrategy(apiKey, secretKey, passphrase, s, states[s.id], perStrategy).catch(e =>
+      broadcast({ type: 'log', msg: `[${s.name}] Erro: ${e.message}` })
+    )
+  ));
+
   setTimeout(botLoop, 60000);
 }
 
@@ -90,20 +89,21 @@ app.get('/api/config', (req, res) => {
 });
 
 app.post('/api/start', async (req, res) => {
-  const { apiKey, secretKey, passphrase, strategyId, amount } = req.body;
-  if (!apiKey || !secretKey || !passphrase || !strategyId || !amount) {
+  const { apiKey, secretKey, passphrase, amount } = req.body;
+  if (!apiKey || !secretKey || !passphrase || !amount) {
     return res.json({ success: false, error: 'Preencha todos os campos' });
   }
-
   if (bot && bot.running) {
     return res.json({ success: false, error: 'Bot já está rodando' });
   }
 
-  const strategy = STRATEGIES.find(s => s.id === strategyId);
-  if (!strategy) return res.json({ success: false, error: 'Estratégia inválida' });
+  const states = {};
+  STRATEGIES.forEach(s => { states[s.id] = { hasPosition: false, entryPx: 0, pnl: 0, pnlPct: 0, price: 0 }; });
 
-  bot = { apiKey, secretKey, passphrase, strategy, amount: parseFloat(amount), running: true, lastPrice: 0 };
-  broadcast({ type: 'log', msg: `Bot iniciado - ${strategy.name} | ${strategy.timeframe} | ${strategy.leverage}x | TP ${strategy.tp_pct}% SL ${strategy.sl_pct}%` });
+  bot = { apiKey, secretKey, passphrase, amount: parseFloat(amount), running: true, states };
+  const names = STRATEGIES.map(s => `${s.name} (${s.timeframe})`).join(', ');
+  broadcast({ type: 'log', msg: `Bot iniciado - ${STRATEGIES.length} estratégias: ${names}` });
+  broadcast({ type: 'log', msg: `Valor total: $${amount} ($${(amount / STRATEGIES.length).toFixed(2)} por estratégia)` });
   setTimeout(botLoop, 1000);
   res.json({ success: true });
 });
@@ -115,7 +115,7 @@ app.post('/api/stop', (req, res) => {
 });
 
 app.get('/api/status', (req, res) => {
-  res.json({ running: bot ? bot.running : false, strategy: bot ? bot.strategy?.id : null });
+  res.json({ running: bot ? bot.running : false, states: bot ? bot.states : {} });
 });
 
 app.get('/api/sse', (req, res) => {
