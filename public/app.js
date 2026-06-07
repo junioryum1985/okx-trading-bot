@@ -101,6 +101,10 @@ evtSource.onmessage = (e) => {
       case 'balance':
         updateBalanceUI(data.balance);
         break;
+      case 'price':
+        priceData.push({ t: data.ts, p: data.price });
+        updatePriceChart();
+        break;
       case 'signal':
         document.getElementById(`status-${data.strategy}`).textContent = data.signal ? '🔵 SINAL' : '⏳ aguardando';
         break;

@@ -36,6 +36,7 @@ async function processStrategy(apiKey, secretKey, passphrase, strat, state, amou
   );
 
   state.price = price;
+  broadcast({ type: 'price', price, ts: Date.now() });
 
   if (openPos) {
     state.hasPosition = true;
