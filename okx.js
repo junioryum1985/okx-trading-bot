@@ -47,8 +47,8 @@ async function getBalance(apiKey, secretKey, passphrase) {
   return usdt ? parseFloat(usdt.eq) : 0;
 }
 
-async function placeOrder(apiKey, secretKey, passphrase, instId, side, posSide, sz, tdMode = 'cross') {
-  const body = JSON.stringify({ instId, tdMode, side, posSide, ordType: 'market', sz: String(sz) });
+async function placeOrder(apiKey, secretKey, passphrase, instId, side, sz, tdMode = 'cross') {
+  const body = JSON.stringify({ instId, tdMode, side, ordType: 'market', sz: String(sz) });
   return apiCall(apiKey, secretKey, passphrase, 'POST', '/api/v5/trade/order', body);
 }
 
@@ -72,8 +72,7 @@ async function setTPSL(apiKey, secretKey, passphrase, instId, tpPct, slPct, dire
 
 async function closePosition(apiKey, secretKey, passphrase, instId, direction) {
   const side = direction === 'long' ? 'sell' : 'buy';
-  const posSide = direction === 'long' ? 'long' : 'short';
-  const body = JSON.stringify({ instId, tdMode: 'cross', side, posSide, ordType: 'market', sz: '0' });
+  const body = JSON.stringify({ instId, tdMode: 'cross', side, ordType: 'market', sz: '0' });
   return apiCall(apiKey, secretKey, passphrase, 'POST', '/api/v5/trade/close-position', body);
 }
 

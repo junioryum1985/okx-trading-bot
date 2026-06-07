@@ -1,7 +1,6 @@
 const evtSource = new EventSource('/api/sse');
 const trades = [];
-let priceData = [];
-let priceChart = null, tradeChart = null;
+let priceChart = null, tradeChart = null, dailyCandles = [];
 
 const formatUSD = v => `$${parseFloat(v || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -26,6 +25,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>`;
     list.appendChild(div);
   });
+  fetchDailyCandles();
+  setInterval(fetchDailyCandles, 300000);
 });
 
 async function startBot() {
@@ -80,6 +81,36 @@ function addLog(msg) {
   container.scrollTop = container.scrollHeight;
 }
 
+async function fetchDailyCandles() {
+  try {
+    const res = await fetch('/api/candles/daily');
+    const json = await res.json();
+    if (json.candles && json.candles.length) {
+      dailyCandles = json.candles;
+      updatePriceChart();
+    }
+  } catch (_) {}
+}
+
+function updatePriceChart() {
+  if (!dailyCandles.length) return;
+  const ctx = document.getElementById('priceChart').getContext('2d');
+  if (!priceChart) {
+    priceChart = new Chart(ctx, {
+      type: 'candlestick',
+      data: { datasets: [{ label: 'BTC/USDT', data: [], borderColor: '#f7931a', backgroundColor: c => c.raw.c >= c.raw.o ? '#26a69a' : '#ef5350' }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `O:$${ctx.raw.o.toFixed(1)} H:$${ctx.raw.h.toFixed(1)} L:$${ctx.raw.l.toFixed(1)} C:$${ctx.raw.c.toFixed(1)}` } } },
+        scales: { x: { type: 'time', time: { unit: 'day' }, ticks: { color: '#8b949e', maxTicksLimit: 10 } }, y: { ticks: { color: '#8b949e' } } }
+      }
+    });
+  }
+  const slice = dailyCandles.slice(-90);
+  priceChart.data.datasets[0].data = slice.map(c => ({ x: c.ts, o: c.o, h: c.h, l: c.l, c: c.c }));
+  priceChart.update('none');
+}
+
 function updateBalanceUI(bal) {
   let el = document.getElementById('balanceDisplay');
   if (!el) {
@@ -101,10 +132,6 @@ evtSource.onmessage = (e) => {
       case 'balance':
         updateBalanceUI(data.balance);
         break;
-      case 'price':
-        priceData.push({ t: data.ts, p: data.price });
-        updatePriceChart();
-        break;
       case 'signal':
         document.getElementById(`status-${data.strategy}`).textContent = data.signal ? '🔵 SINAL' : '⏳ aguardando';
         break;
@@ -114,8 +141,6 @@ evtSource.onmessage = (e) => {
         const pnlEl = document.getElementById(`pnl-${data.strategy}`);
         pnlEl.textContent = `${data.pnlPct ? data.pnlPct.toFixed(2) : '0.00'}%`;
         pnlEl.className = data.pnlPct >= 0 ? 'value positive' : 'value negative';
-        priceData.push({ t: data.ts, p: data.price });
-        updatePriceChart();
         break;
       case 'trade':
         trades.push(data);
@@ -125,20 +150,6 @@ evtSource.onmessage = (e) => {
     }
   } catch (e) { /* ignore */ }
 };
-
-function updatePriceChart() {
-  if (!priceChart) {
-    priceChart = new Chart(document.getElementById('priceChart').getContext('2d'), {
-      type: 'line',
-      data: { labels: [], datasets: [{ label: 'BTC', data: [], borderColor: '#f7931a', borderWidth: 1.5, pointRadius: 0, fill: false }] },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: 10 } } } }
-    });
-  }
-  const slice = priceData.slice(-200);
-  priceChart.data.labels = slice.map(d => new Date(d.t).toLocaleTimeString());
-  priceChart.data.datasets[0].data = slice.map(d => d.p);
-  priceChart.update('none');
-}
 
 function updateTradeChart() {
   const colors = { 'MACD 12/26/9 Long': '#2979ff', 'EMA 9/21 + MACD Long': '#00c853', 'EMA 9/21 + MACD Short': '#ff1744' };

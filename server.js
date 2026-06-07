@@ -55,11 +55,10 @@ async function processStrategy(apiKey, secretKey, passphrase, strat, state, amou
     const minSz = await okx.getMinSize(INSTRUMENT);
     const sz = Math.max(minSz, parseFloat((amount / price).toFixed(3)));
     const side = strat.direction === 'long' ? 'buy' : 'sell';
-    const posSide = strat.direction;
 
     broadcast({ type: 'log', msg: `[${strat.name}] Sinal ${strat.direction.toUpperCase()}! Entry: $${price}, Size: ${sz}` });
 
-    const order = await okx.placeOrder(apiKey, secretKey, passphrase, INSTRUMENT, side, posSide, sz);
+    const order = await okx.placeOrder(apiKey, secretKey, passphrase, INSTRUMENT, side, sz);
     if (order.code === '0') {
       broadcast({ type: 'log', msg: `[${strat.name}] Ordem OK: ${order.data[0].ordId}` });
       await new Promise(r => setTimeout(r, 1000));
@@ -135,6 +134,77 @@ app.get('/api/balance', async (req, res) => {
     res.json({ balance: bal });
   } catch (e) {
     res.json({ balance: null, error: e.message });
+  }
+});
+
+app.get('/api/candles/daily', async (req, res) => {
+  try {
+    const candles = await okx.getCandles('BTC-USDT-SWAP', '1D', 100);
+    res.json({ candles });
+  } catch (e) {
+    res.json({ candles: [], error: e.message });
+  }
+});
+
+app.post('/api/test-trade', async (req, res) => {
+  if (!bot) return res.json({ success: false, error: 'Bot não iniciado' });
+  const { apiKey, secretKey, passphrase } = bot;
+  const results = [];
+  try {
+    const priceReq = await fetch('https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT-SWAP');
+    const priceJson = await priceReq.json();
+    const price = parseFloat(priceJson.data[0].last);
+    const minSz = await okx.getMinSize('BTC-USDT-SWAP');
+    const sz = Math.max(minSz, 0.001);
+
+    const long = await okx.placeOrder(apiKey, secretKey, passphrase, 'BTC-USDT-SWAP', 'buy', sz);
+    results.push({ side: 'long', order: long });
+    broadcast({ type: 'log', msg: `[TESTE] Long order: ${long.code === '0' ? 'OK ' + long.data[0].ordId : 'FALHA ' + (long.msg || long.code)}` });
+
+    await new Promise(r => setTimeout(r, 2000));
+
+    const short = await okx.placeOrder(apiKey, secretKey, passphrase, 'BTC-USDT-SWAP', 'sell', sz);
+    results.push({ side: 'short', order: short });
+    broadcast({ type: 'log', msg: `[TESTE] Short order: ${short.code === '0' ? 'OK ' + short.data[0].ordId : 'FALHA ' + (short.msg || short.code)}` });
+
+    await new Promise(r => setTimeout(r, 2000));
+
+    if (long.code === '0') {
+      await okx.setTPSL(apiKey, secretKey, passphrase, 'BTC-USDT-SWAP', 0.5, 1, 'long', price);
+      broadcast({ type: 'log', msg: '[TESTE] TP/SL Long configurado' });
+    }
+    if (short.code === '0') {
+      await okx.setTPSL(apiKey, secretKey, passphrase, 'BTC-USDT-SWAP', 0.5, 1, 'short', price);
+      broadcast({ type: 'log', msg: '[TESTE] TP/SL Short configurado' });
+    }
+
+    broadcast({ type: 'log', msg: '[TESTE] Teste concluído' });
+    res.json({ success: true, results });
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/cleanup', async (req, res) => {
+  if (!bot) return res.json({ success: false, error: 'Bot não iniciado' });
+  const { apiKey, secretKey, passphrase } = bot;
+  try {
+    const positions = await okx.getPositions(apiKey, secretKey, passphrase, 'BTC-USDT-SWAP');
+    const results = [];
+    for (const p of positions) {
+      if (parseFloat(p.pos) !== 0) {
+        const dir = p.posSide === 'long' ? 'long' : 'short';
+        const side = dir === 'long' ? 'sell' : 'buy';
+        await okx.closePosition(apiKey, secretKey, passphrase, 'BTC-USDT-SWAP', dir);
+        results.push({ side: dir, pos: p.pos });
+        broadcast({ type: 'log', msg: `[CLEANUP] Posição ${dir} de ${p.pos} fechada` });
+      }
+    }
+    broadcast({ type: 'log', msg: `[CLEANUP] ${results.length} posição(ões) fechada(s)` });
+    res.json({ success: true, closed: results });
+  } catch (e) {
+    broadcast({ type: 'log', msg: `[CLEANUP] Erro: ${e.message}` });
+    res.json({ success: false, error: e.message });
   }
 });
 
