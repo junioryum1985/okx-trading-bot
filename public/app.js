@@ -1,12 +1,20 @@
 const evtSource = new EventSource('/api/sse');
 const trades = [];
-let priceChart = null, tradeChart = null, dailyCandles = [];
+let priceChart = null, tradeChart = null, priceData = [];
+const MAX_PRICE_POINTS = 200;
 
 const formatUSD = v => `$${parseFloat(v || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const res = await fetch('/api/config');
-  const cfg = await res.json();
+  const [cfgRes, candlesRes] = await Promise.all([
+    fetch('/api/config'),
+    fetch('/api/candles/recent')
+  ]);
+  const cfg = await cfgRes.json();
+  const candlesJson = await candlesRes.json();
+  if (candlesJson.candles) {
+    candlesJson.candles.forEach(c => priceData.push({ t: c.ts, p: c.c }));
+  }
   const list = document.getElementById('stratList');
   cfg.strategies.forEach(s => {
     const div = document.createElement('div');
@@ -25,8 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>`;
     list.appendChild(div);
   });
-  fetchDailyCandles();
-  setInterval(fetchDailyCandles, 300000);
+  updatePriceChart();
 });
 
 async function startBot() {
@@ -81,19 +88,8 @@ function addLog(msg) {
   container.scrollTop = container.scrollHeight;
 }
 
-async function fetchDailyCandles() {
-  try {
-    const res = await fetch('/api/candles/daily');
-    const json = await res.json();
-    if (json.candles && json.candles.length) {
-      dailyCandles = json.candles;
-      updatePriceChart();
-    }
-  } catch (_) {}
-}
-
 function updatePriceChart() {
-  if (!dailyCandles.length) return;
+  if (!priceData.length) return;
   const ctx = document.getElementById('priceChart').getContext('2d');
   if (!priceChart) {
     priceChart = new Chart(ctx, {
@@ -112,17 +108,18 @@ function updatePriceChart() {
       },
       options: {
         responsive: true, maintainAspectRatio: false,
+        animation: { duration: 300 },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `$${ctx.parsed.y.toFixed(1)}` } } },
         scales: {
-          x: { type: 'time', time: { unit: 'day' }, ticks: { color: '#8b949e', maxTicksLimit: 10 } },
+          x: { ticks: { color: '#8b949e', maxTicksLimit: 10, maxRotation: 0 } },
           y: { ticks: { color: '#8b949e', callback: v => '$' + v.toLocaleString() } }
         }
       }
     });
   }
-  const slice = dailyCandles.slice(-90);
-  priceChart.data.labels = slice.map(c => new Date(c.ts));
-  priceChart.data.datasets[0].data = slice.map(c => c.c);
+  const slice = priceData.slice(-MAX_PRICE_POINTS);
+  priceChart.data.labels = slice.map(d => { const t = new Date(d.t); return `${t.getHours()}:${String(t.getMinutes()).padStart(2,'0')}`; });
+  priceChart.data.datasets[0].data = slice.map(d => d.p);
   priceChart.update('none');
 }
 
@@ -146,6 +143,10 @@ evtSource.onmessage = (e) => {
         break;
       case 'balance':
         updateBalanceUI(data.balance);
+        break;
+      case 'price':
+        priceData.push({ t: data.ts, p: data.price });
+        updatePriceChart();
         break;
       case 'signal':
         document.getElementById(`status-${data.strategy}`).textContent = data.signal ? '🔵 SINAL' : '⏳ aguardando';

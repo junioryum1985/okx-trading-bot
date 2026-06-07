@@ -137,9 +137,9 @@ app.get('/api/balance', async (req, res) => {
   }
 });
 
-app.get('/api/candles/daily', async (req, res) => {
+app.get('/api/candles/recent', async (req, res) => {
   try {
-    const candles = await okx.getCandles('BTC-USDT-SWAP', '1D', 100);
+    const candles = await okx.getCandles('BTC-USDT-SWAP', '15m', 100);
     res.json({ candles });
   } catch (e) {
     res.json({ candles: [], error: e.message });
