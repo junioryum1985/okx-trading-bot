@@ -1,16 +1,21 @@
 const crypto = require('crypto');
 
+let DEMO = false;
+function setDemo(v) { DEMO = v; }
+
 function signRequest(apiKey, secretKey, passphrase, method, path, body = '') {
   const ts = new Date().toISOString();
   const msg = ts + method + path + body;
   const sig = crypto.createHmac('sha256', secretKey).update(msg).digest('base64');
-  return {
+  const headers = {
     'OK-ACCESS-KEY': apiKey,
     'OK-ACCESS-SIGN': sig,
     'OK-ACCESS-TIMESTAMP': ts,
     'OK-ACCESS-PASSPHRASE': passphrase,
     'Content-Type': 'application/json'
   };
+  if (DEMO) headers['x-simulated-trading'] = '1';
+  return headers;
 }
 
 async function apiCall(apiKey, secretKey, passphrase, method, path, body = undefined) {
@@ -86,4 +91,4 @@ async function getMinSize(instId) {
   return parseFloat(inst.minSz) || 0.001;
 }
 
-module.exports = { getCandles, getBalance, placeOrder, setTPSL, closePosition, getPositions, getMinSize };
+module.exports = { getCandles, getBalance, placeOrder, setTPSL, closePosition, getPositions, getMinSize, setDemo };

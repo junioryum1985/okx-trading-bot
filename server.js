@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const STRATEGIES = require('./strategies');
 const okx = require('./okx');
+okx.setDemo(true); // true = demo (simulated trading), false = live
 
 const app = express();
 app.use(express.json());
