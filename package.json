@@ -1,0 +1,13 @@
+{
+  "name": "okx-trading-bot",
+  "version": "1.0.0",
+  "description": "OKX Trading Bot - Top 3 Estrategias",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "sql.js": "^1.14.1"
+  }
+}

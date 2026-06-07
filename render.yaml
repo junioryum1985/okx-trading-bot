@@ -1,10 +1,10 @@
 services:
   - type: web
-    name: btc-bot
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: bash start.sh
+    name: okx-trading-bot
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
     healthCheckPath: /
     envVars:
-      - key: PYTHONUNBUFFERED
-        value: "1"
+      - key: NODE_VERSION
+        value: "20"

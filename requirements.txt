@@ -1,3 +1,0 @@
-okx>=1.0.0
-pyyaml>=6.0
-prettytable>=3.0
